@@ -989,60 +989,97 @@ install_command() {
     check_running_as_root
 
     # Default values
-    database_type="sqlite"
-    marzban_version="latest"
-    marzban_version_set="false"
-    MYSQL_PASSWORD=""  # Пароль по умолчанию (если не задан)
+    local database_type="sqlite"
+    local marzban_version="latest"
+    local marzban_version_set=false
+    local MYSQL_PASSWORD=""
+    local UVICORN_PORT="10000"
 
     # Parse options
     while [[ $# -gt 0 ]]; do
-        key="$1"
-        case $key in
+        case "$1" in
             --database)
                 database_type="$2"
                 shift 2
-            ;;
+                ;;
             --dev)
-                if [[ "$marzban_version_set" == "true" ]]; then
-                    colorized_echo red "Error: Cannot use --dev and --version options simultaneously."
+                if "$marzban_version_set"; then
+                    colorized_echo red "Error: --dev and --version are mutually exclusive."
                     exit 1
                 fi
                 marzban_version="dev"
-                marzban_version_set="true"
+                marzban_version_set=true
                 shift
-            ;;
+                ;;
             --version)
-                if [[ "$marzban_version_set" == "true" ]]; then
-                    colorized_echo red "Error: Cannot use --dev and --version options simultaneously."
+                if "$marzban_version_set"; then
+                    colorized_echo red "Error: --dev and --version are mutually exclusive."
                     exit 1
                 fi
                 marzban_version="$2"
-                marzban_version_set="true"
+                marzban_version_set=true
                 shift 2
-            ;;
-            --db-password)  # Новый аргумент для пароля
+                ;;
+            --db-password)
                 MYSQL_PASSWORD="$2"
                 shift 2
-            ;;
+                ;;
+            --port)
+                UVICORN_PORT="$2"
+                shift 2
+                ;;
+            -h|--help)
+                echo "Usage: marzban install [--database sqlite|mysql|mariadb] [--version X.Y.Z|--dev] [--db-password PASSWORD] [--port PORT]"
+                exit 0
+                ;;
             *)
-                echo "Unknown option: $1"
+                colorized_echo red "Unknown option: $1"
                 exit 1
-            ;;
+                ;;
         esac
     done
 
-    # Если пароль не задан через аргумент, генерируем автоматически
-    if [ -z "$MYSQL_PASSWORD" ]; then
+    # Generate password if not provided
+    if [[ -z "$MYSQL_PASSWORD" && "$database_type" != "sqlite" ]]; then
         MYSQL_PASSWORD=$(tr -dc 'A-Za-z0-9' </dev/urandom | head -c 20)
-        colorized_echo yellow "Auto-generated MySQL password: $MYSQL_PASSWORD"
+        colorized_echo yellow "Auto-generated database password: $MYSQL_PASSWORD"
     fi
 
-    # Далее идёт остальная логика установки...
+    # Check if version exists (only for non-dev)
+    if [[ "$marzban_version" != "latest" && "$marzban_version" != "dev" ]]; then
+        if ! check_version_exists "$marzban_version"; then
+            colorized_echo red "Version $marzban_version does not exist!"
+            exit 1
+        fi
+    fi
+
+    # Check if already installed
+    if is_marzban_installed; then
+        colorized_echo red "Marzban is already installed at $APP_DIR"
+        read -p "Overwrite? (y/n) " -n 1 -r
+        echo
+        if [[ ! $REPLY =~ ^[Yy]$ ]]; then
+            exit 1
+        fi
+    fi
+
+    # Install dependencies
+    detect_os
+    install_package curl jq docker yq
+
+    # Download and configure Marzban
     install_marzban "$marzban_version" "$database_type"
+
+    # Modify .env with custom port/password
+    sed -i "s/UVICORN_PORT=8000/UVICORN_PORT=$UVICORN_PORT/" "$ENV_FILE"
+    if [[ "$database_type" != "sqlite" ]]; then
+        sed -i "s/MYSQL_PASSWORD=.*/MYSQL_PASSWORD=$MYSQL_PASSWORD/" "$ENV_FILE"
+    fi
+
+    # Start services
     up_marzban
     follow_marzban_logs
 }
-
 
 install_yq() {
     if command -v yq &>/dev/null; then
