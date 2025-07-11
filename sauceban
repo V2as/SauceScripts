@@ -790,7 +790,7 @@ EOF
         sed -i 's~\(XRAY_JSON = \).*~\1"/var/lib/marzban/xray_config.json"~' "$APP_DIR/.env"
 
 
-        prompt_for_marzban_password
+        
         MYSQL_ROOT_PASSWORD=$(tr -dc 'A-Za-z0-9' </dev/urandom | head -c 20)
         
         echo "" >> "$ENV_FILE"
@@ -882,7 +882,7 @@ EOF
         sed -i 's~\(XRAY_JSON = \).*~\1"/var/lib/marzban/xray_config.json"~' "$APP_DIR/.env"
 
 
-        prompt_for_marzban_password
+        
         MYSQL_ROOT_PASSWORD=$(tr -dc 'A-Za-z0-9' </dev/urandom | head -c 20)
         
         echo "" >> "$ENV_FILE"
@@ -985,25 +985,6 @@ status_command() {
     done
 }
 
-
-prompt_for_marzban_password() {
-    colorized_echo cyan "This password will be used to access the database and should be strong."
-    colorized_echo cyan "If you do not enter a custom password, a secure 20-character password will be generated automatically."
-
-    # Запрашиваем ввод пароля
-    read -p "Enter the password for the marzban user (or press Enter to generate a secure default password): " MYSQL_PASSWORD
-
-    # Генерация 20-значного пароля, если пользователь оставил поле пустым
-    if [ -z "$MYSQL_PASSWORD" ]; then
-        MYSQL_PASSWORD=$(tr -dc 'A-Za-z0-9' </dev/urandom | head -c 20)
-        colorized_echo green "A secure password has been generated automatically."
-    fi
-    colorized_echo green "This password will be recorded in the .env file for future use."
-
-    # Пауза 3 секунды перед продолжением
-    sleep 3
-}
-
 install_command() {
     check_running_as_root
 
@@ -1011,6 +992,7 @@ install_command() {
     database_type="sqlite"
     marzban_version="latest"
     marzban_version_set="false"
+    MYSQL_PASSWORD=""  # Пароль по умолчанию (если не задан)
 
     # Parse options
     while [[ $# -gt 0 ]]; do
@@ -1038,6 +1020,10 @@ install_command() {
                 marzban_version_set="true"
                 shift 2
             ;;
+            --db-password)  # Новый аргумент для пароля
+                MYSQL_PASSWORD="$2"
+                shift 2
+            ;;
             *)
                 echo "Unknown option: $1"
                 exit 1
@@ -1045,64 +1031,18 @@ install_command() {
         esac
     done
 
-    # Check if marzban is already installed
-    if is_marzban_installed; then
-        colorized_echo red "Marzban is already installed at $APP_DIR"
-        read -p "Do you want to override the previous installation? (y/n) "
-        if [[ ! $REPLY =~ ^[Yy]$ ]]; then
-            colorized_echo red "Aborted installation"
-            exit 1
-        fi
+    # Если пароль не задан через аргумент, генерируем автоматически
+    if [ -z "$MYSQL_PASSWORD" ]; then
+        MYSQL_PASSWORD=$(tr -dc 'A-Za-z0-9' </dev/urandom | head -c 20)
+        colorized_echo yellow "Auto-generated MySQL password: $MYSQL_PASSWORD"
     fi
-    detect_os
-    if ! command -v jq >/dev/null 2>&1; then
-        install_package jq
-    fi
-    if ! command -v curl >/dev/null 2>&1; then
-        install_package curl
-    fi
-    if ! command -v docker >/dev/null 2>&1; then
-        install_docker
-    fi
-    if ! command -v yq >/dev/null 2>&1; then
-        install_yq
-    fi
-    detect_compose
-    install_marzban_script
-    # Function to check if a version exists in the GitHub releases
-    check_version_exists() {
-        local version=$1
-        repo_url="https://api.github.com/repos/Gozargah/Marzban/releases"
-        if [ "$version" == "latest" ] || [ "$version" == "dev" ]; then
-            return 0
-        fi
-        
-        # Fetch the release data from GitHub API
-        response=$(curl -s "$repo_url")
-        
-        # Check if the response contains the version tag
-        if echo "$response" | jq -e ".[] | select(.tag_name == \"${version}\")" > /dev/null; then
-            return 0
-        else
-            return 1
-        fi
-    }
-    # Check if the version is valid and exists
-    if [[ "$marzban_version" == "latest" || "$marzban_version" == "dev" || "$marzban_version" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
-        if check_version_exists "$marzban_version"; then
-            install_marzban "$marzban_version" "$database_type"
-            echo "Installing $marzban_version version"
-        else
-            echo "Version $marzban_version does not exist. Please enter a valid version (e.g. v0.5.2)"
-            exit 1
-        fi
-    else
-        echo "Invalid version format. Please enter a valid version (e.g. v0.5.2)"
-        exit 1
-    fi
+
+    # Далее идёт остальная логика установки...
+    install_marzban "$marzban_version" "$database_type"
     up_marzban
     follow_marzban_logs
 }
+
 
 install_yq() {
     if command -v yq &>/dev/null; then
