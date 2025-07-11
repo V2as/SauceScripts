@@ -1128,6 +1128,9 @@ install_command() {
     
     up_marzban
     follow_marzban_logs
+    sed -i 's/--bind-address=127.0.0.1/--bind-address=0.0.0.0/' "$APP_DIR/docker-compose.yml"
+    
+    colorized_echo green "MariaDB/MySQL bind-address changed to 0.0.0.0"
 }
 
 
