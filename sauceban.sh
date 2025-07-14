@@ -945,9 +945,6 @@ up_marzban() {
     $COMPOSE -f $COMPOSE_FILE -p "$APP_NAME" up -d --remove-orphans
 }
 
-follow_marzban_logs() {
-    $COMPOSE -f $COMPOSE_FILE -p "$APP_NAME" logs -f
-}
 
 status_command() {
     
@@ -1224,9 +1221,6 @@ show_marzban_logs() {
     $COMPOSE -f $COMPOSE_FILE -p "$APP_NAME" logs
 }
 
-follow_marzban_logs() {
-    $COMPOSE -f $COMPOSE_FILE -p "$APP_NAME" logs -f
-}
 
 marzban_cli() {
     $COMPOSE -f $COMPOSE_FILE -p "$APP_NAME" exec -e CLI_PROG_NAME="marzban cli" marzban marzban-cli "$@"
@@ -1344,9 +1338,7 @@ restart_command() {
     
     down_marzban
     up_marzban
-    if [ "$no_logs" = false ]; then
-        follow_marzban_logs
-    fi
+    
     colorized_echo green "Marzban successfully restarted!"
 }
 logs_command() {
@@ -1390,11 +1382,7 @@ logs_command() {
         exit 1
     fi
     
-    if [ "$no_follow" = true ]; then
-        show_marzban_logs
-    else
-        follow_marzban_logs
-    fi
+   
 }
 
 down_command() {
@@ -1474,9 +1462,7 @@ up_command() {
     fi
     
     up_marzban
-    if [ "$no_logs" = false ]; then
-        follow_marzban_logs
-    fi
+    
 }
 
 update_command() {
